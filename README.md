@@ -1,16 +1,28 @@
-# Kafka Spark Streaming Pipeline
+<p align="center">
+  <img src="assets/kafka-spark-streaming-pipeline.png" alt="Kafka Spark Streaming Pipeline logo" width="300">
+</p>
 
-A streaming data pipeline prototype for turning scraped market articles into structured content:
+<h1 align="center">Kafka Spark Streaming Pipeline</h1>
+
+<p align="center">Ingest, queue, process, and serve article data through a streaming architecture.</p>
+
+<p align="center">
+  <a href="#offline-demo">Offline demo</a> ·
+  <a href="#live-stack">Live stack</a> ·
+  <a href="#architecture">Architecture</a>
+</p>
+
+This project prototypes a data pipeline for turning scraped market articles into structured content:
 
 ```text
 Airflow → Playwright/OpenAI → Kafka → Spark Structured Streaming → Cassandra → Streamlit
 ```
 
-The repository contains the full Docker-based stack and a small offline demo. The offline demo is the reliable starting point; the live stack still depends on local Docker resources, provider selectors, and an OpenAI API key.
+The repository includes a dependency-free demo for the data contract and a Docker-based stack for experimenting with the full topology.
 
-## Offline demo
+## Start with the offline demo
 
-The demo uses only the Python standard library. It models the important data path with sample messages, URL deduplication, JSONL output, and an HTML preview.
+The demo uses only the Python standard library. It models scrape-shaped input, duplicate removal, JSONL storage output, and a small HTML preview:
 
 ```bash
 python demo.py
@@ -25,11 +37,18 @@ JSONL: demo-output/blog_posts.jsonl
 Preview: demo-output/index.html
 ```
 
-The duplicate article is removed before the storage-shaped JSONL output is written.
+This is intentionally local and deterministic; it does not pretend to run Kafka or Spark.
+
+## Why use it?
+
+- **See the data contract first.** Article messages are normalized before storage.
+- **Make deduplication explicit.** The demo removes repeated article URLs before writing JSONL.
+- **Keep the full topology visible.** The Docker stack shows where scheduling, queueing, processing, storage, and viewing belong.
+- **Swap the source without rewriting the sink.** Scraper selectors and provider logic live separately from the streaming and storage code.
 
 ## Live stack
 
-The full stack uses Kafka, Spark, Cassandra, Airflow, and Streamlit:
+The full experiment uses Kafka, Spark, Cassandra, Airflow, and Streamlit. It requires Docker and an OpenAI API key for the enrichment path.
 
 ```bash
 cp .env.example .env
@@ -37,23 +56,44 @@ cp .env.example .env
 docker compose up -d
 ```
 
-Services expose the following local entry points when healthy:
+When the services are healthy:
 
-- Airflow: `http://localhost:8080`
-- Streamlit: `http://localhost:8501`
-- Kafka Control Center: `http://localhost:9021`
-- Spark master UI: `http://localhost:9090`
+| Service | Local URL |
+| --- | --- |
+| Airflow | `http://localhost:8080` |
+| Streamlit | `http://localhost:8501` |
+| Kafka Control Center | `http://localhost:9021` |
+| Spark master UI | `http://localhost:9090` |
 
-The live scraper requires the configured website selectors in `dags/utils/scrapping.py`. It should be treated as an experimental integration, not a guaranteed public data feed.
+The live scraper depends on the selectors in `dags/utils/scrapping.py` and on the availability of the upstream website. It is an experimental integration, not a guaranteed public data feed.
 
-## Repository map
+## What is included?
 
-- `dags/kafka_stream.py` — scrape, enrich, and publish article messages.
-- `spark_stream.py` — consume Kafka messages and write structured rows to Cassandra.
-- `streamlit_app.py` — read stored posts for a simple viewer.
-- `dags/playwright_stream.py` — Airflow schedule for the scraper container.
-- `demo.py` — no-credential local smoke demo.
+| Stage | Implementation |
+| --- | --- |
+| Scheduling | Airflow DAG in `dags/playwright_stream.py` |
+| Ingestion | Playwright scraper and article enrichment |
+| Queue | Kafka topic `blog_posts` |
+| Processing | Spark Structured Streaming in `spark_stream.py` |
+| Storage | Cassandra table `spark_streams.blog_posts` |
+| Viewer | Streamlit reader in `streamlit_app.py` |
 
-## Safety
+## Architecture
+
+```text
+Website → Playwright scraper → Kafka: blog_posts
+                                  ↓
+                   Spark Structured Streaming
+                                  ↓
+                         Cassandra storage
+                                  ↓
+                            Streamlit viewer
+```
+
+## Extend the pipeline
+
+- Update source selectors in `dags/utils/scrapping.py` when a provider changes its page structure.
+- Keep the Kafka message fields compatible with the `title`, `content`, and `image` schema in `spark_stream.py`.
+- Use `demo.py` after changing the message shape before starting the full Docker stack.
 
 Keep `.env` and API keys local. The pipeline is for data-engineering experimentation and does not provide investment advice.
