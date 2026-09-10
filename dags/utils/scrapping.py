@@ -35,7 +35,6 @@ class Scraper:
             context.set_default_navigation_timeout(0)
             page = await context.new_page()
 
-            await page.pause()
             await page.goto(website_info['websites'], timeout=0)
             if website_info['post_selectors'][1]:
                 latest_post_url = await page.locator(website_info['post_selectors'][0]).filter(website_info['post_selectors'][1]).get_attribute('href', timeout=100000)
@@ -66,7 +65,8 @@ class Scraper:
                     image_src = await page2.locator(website_info['image_selectors'][0]).get_attribute('src')
                 logging.info('Done!')
 
-                await browser.close()
+                await page2.close()
+                await browser2.close()
 
                 logging.info(f'title:{title}\ncontent:{content}\nimage_src:{image_src}')
                 end_time = time.time()
@@ -74,5 +74,4 @@ class Scraper:
                 return title, content, image_src
             else:
                 raise ValueError("Latest post element not found.")
-
 

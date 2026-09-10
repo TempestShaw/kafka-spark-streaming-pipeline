@@ -1,2 +1,4 @@
 .env
+.DS_Store
+demo-output/
 .gitignore
