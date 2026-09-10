@@ -6,6 +6,7 @@ from utils import *
 from prompt import *
 import logging
 import asyncio
+import os
 
 default_args = {
     'owner': 'airscholar',
@@ -55,17 +56,25 @@ def process_raw_data(website):
 def stream_data():
     import json
     from kafka import KafkaProducer
-    import time
     import logging
     load_dotenv(verbose=True)
-    producer = KafkaProducer(bootstrap_servers=['broker:29092'], max_block_ms=5000)
-    curr_time = time.time()
+    bootstrap_servers = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "broker:29092")
+    producer = KafkaProducer(
+        bootstrap_servers=[server.strip() for server in bootstrap_servers.split(",")],
+        max_block_ms=5000,
+    )
 
     try:
         data = process_raw_data(visualCapitalist)
+        if data is None:
+            logging.warning("No article was produced; skipping Kafka publish")
+            return
         producer.send('blog_posts', json.dumps(data).encode('utf-8'))
+        producer.flush()
     except Exception as e:
         logging.error(f'An error occured: {e}')
+    finally:
+        producer.close()
 
 
 def main():

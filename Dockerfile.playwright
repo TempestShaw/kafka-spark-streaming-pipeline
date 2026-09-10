@@ -5,11 +5,10 @@ FROM mcr.microsoft.com/playwright/python:v1.41.2-jammy
 WORKDIR /app
 
 # Copy the scraping script into the container
-COPY /dags/kafka_stream.py /app
-COPY /dags/static/prompt.py/ /app/
-COPY /dags/utils/scrapping.py /app/
-COPY /dags/utils/utils.py /app/
-COPY .env /app/
+COPY dags/kafka_stream.py /app/kafka_stream.py
+COPY dags/static/prompt.py /app/prompt.py
+COPY dags/utils/scrapping.py /app/scrapping.py
+COPY dags/utils/utils.py /app/utils.py
 # Install Python dependencies, ensure you have a requirements.txt file
 COPY kafka-requirements.txt /app
 RUN pip install --upgrade pip && pip install -r kafka-requirements.txt

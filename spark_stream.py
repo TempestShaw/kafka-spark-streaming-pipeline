@@ -1,6 +1,9 @@
 import logging
+import os
 
+from cassandra.auth import PlainTextAuthProvider
 from cassandra.cluster import Cluster
+from dotenv import load_dotenv
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import from_json, col
 from pyspark.sql.types import StructType, StructField, StringType
@@ -22,6 +25,13 @@ handler.setFormatter(colorlog.ColoredFormatter(
 logger = colorlog.getLogger()
 logger.addHandler(handler)
 logger.setLevel(logging.DEBUG)
+
+load_dotenv()
+KAFKA_BOOTSTRAP_SERVERS = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092")
+CASSANDRA_HOST = os.getenv("CASSANDRA_HOST", "localhost")
+CASSANDRA_PORT = int(os.getenv("CASSANDRA_PORT", "9042"))
+CASSANDRA_USERNAME = os.getenv("CASSANDRA_USERNAME")
+CASSANDRA_PASSWORD = os.getenv("CASSANDRA_PASSWORD")
 
 # Test logging
 logger.debug('A debug message')
@@ -82,7 +92,7 @@ def create_spark_connection():
             .builder \
             .appName('SparkDataStreaming') \
             .config('spark.jars.packages', 'com.datastax.spark:spark-cassandra-connector_2.12:3.4.1,org.apache.spark:spark-sql-kafka-0-10_2.12:3.4.1') \
-            .config('spark.cassandra.connection.host', 'localhost') \
+            .config('spark.cassandra.connection.host', CASSANDRA_HOST) \
             .getOrCreate()
         s_conn.sparkContext.setLogLevel("ERROR")
         logging.info("Spark connection created successfully!")
@@ -97,7 +107,7 @@ def connect_to_kafka(spark_conn):
     try:
         spark_df = spark_conn.readStream \
             .format('kafka') \
-            .option('kafka.bootstrap.servers', "localhost:9092") \
+            .option('kafka.bootstrap.servers', KAFKA_BOOTSTRAP_SERVERS) \
             .option('subscribe', 'blog_posts') \
             .option('failOnDataLoss', 'false') \
             .option('startingOffsets', 'earliest') \
@@ -112,8 +122,18 @@ def connect_to_kafka(spark_conn):
 def create_cassandra_connection():
     logging.info("Attempting to create a Cassandra connection...")
     try:
-        # Connecting to the Cassandra cluster
-        cluster = Cluster(['localhost'], protocol_version=5)
+        auth_provider = None
+        if CASSANDRA_USERNAME and CASSANDRA_PASSWORD:
+            auth_provider = PlainTextAuthProvider(
+                username=CASSANDRA_USERNAME,
+                password=CASSANDRA_PASSWORD,
+            )
+        cluster = Cluster(
+            contact_points=[CASSANDRA_HOST],
+            port=CASSANDRA_PORT,
+            protocol_version=5,
+            auth_provider=auth_provider,
+        )
 
         cas_session = cluster.connect()
         logging.info("Cassandra connection created successfully.")
@@ -149,10 +169,14 @@ if __name__ == "__main__":
     if spark_conn is not None:
         # connect to kafka with spark connection
         spark_df = connect_to_kafka(spark_conn)
-        selection_df = create_selection_df_from_kafka(spark_df)
+        selection_df = (
+            create_selection_df_from_kafka(spark_df)
+            if spark_df is not None
+            else None
+        )
         session = create_cassandra_connection()
 
-        if session is not None:
+        if session is not None and selection_df is not None:
             create_keyspace(session)
             create_table(session)
             # insert_data(session)

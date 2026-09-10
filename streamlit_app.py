@@ -1,23 +1,61 @@
-import cassandra
-from cassandra.cluster import Cluster
+import os
+
 import requests
-import base64
 import streamlit as st
+from cassandra.auth import PlainTextAuthProvider
+from cassandra.cluster import Cluster
 
-def run():
-    cluster = Cluster(['127.0.0.1'],port=9042)
-    session = cluster.connect('spark_streams')
 
-    rows = session.execute("SELECT title, content, image FROM blog_posts")
-    posts = []
-    for row in rows:
-        title = row.title
-        content = row.content
-        image_url = row.image
-        response = requests.get(image_url)
-        image = base64.b64encode(response.content).decode('utf-8')
-        posts.append((title, content, image))
+def load_posts() -> list[dict]:
+    host = os.getenv("CASSANDRA_HOST", "cassandra_db")
+    port = int(os.getenv("CASSANDRA_PORT", "9042"))
+    username = os.getenv("CASSANDRA_USERNAME")
+    password = os.getenv("CASSANDRA_PASSWORD")
+    auth_provider = (
+        PlainTextAuthProvider(username, password)
+        if username and password
+        else None
+    )
+
+    cluster = Cluster([host], port=port, auth_provider=auth_provider)
+    try:
+        session = cluster.connect("spark_streams")
+        rows = session.execute("SELECT title, content, image FROM blog_posts")
+        return [
+            {"title": row.title, "content": row.content, "image": row.image}
+            for row in rows
+        ]
+    finally:
+        cluster.shutdown()
+
+
+def run() -> None:
+    st.set_page_config(page_title="Streaming Article Viewer", page_icon="📰")
+    st.title("Streaming Article Viewer")
+    st.caption("Cassandra-backed output from the Kafka → Spark pipeline")
+
+    try:
+        posts = load_posts()
+    except Exception as exc:
+        st.error("Cassandra is unavailable. Start the pipeline services first.")
+        st.caption(f"Connection detail: {exc}")
+        return
+
+    if not posts:
+        st.info("No articles have reached Cassandra yet.")
+        return
 
     for post in posts:
-        st.image(post[2], caption=post[0], width=300, use_column_width=False)
-        st.write(post[1])
+        st.subheader(post["title"])
+        if post["image"]:
+            try:
+                response = requests.get(post["image"], timeout=10)
+                response.raise_for_status()
+                st.image(response.content, caption=post["title"])
+            except requests.RequestException:
+                st.caption("Article image unavailable")
+        st.write(post["content"])
+
+
+if __name__ == "__main__":
+    run()

@@ -166,3 +166,4 @@ yarg==0.1.9
 yarl==1.9.2
 zipp==3.17.0
 apache-airflow-providers-docker==3.9.2
+docker==7.1.0
